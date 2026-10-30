@@ -55,7 +55,6 @@ jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
     runs-on: ubuntu-22.04
-    # Needed so the release upload step is allowed to create a release
     permissions:
       contents: write
     steps:
@@ -71,14 +70,11 @@ jobs:
         echo "Include Recovery Installer: ${{ inputs.RECOVERY_INSTALLER }}"
         echo "::endgroup::"
 
-    # You might want to Checkout your repo first, but not mandatory
     - name: Check Out
       uses: actions/checkout@v4
 
-    # Cleanup The Actions Workspace Using Custom Composite Run Actions
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
-      # That's it! Now use your normal steps
 
     - name: Set Swap Space
       uses: pierotofy/set-swap-space@master
@@ -242,6 +238,20 @@ jobs:
         sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-9 100
         gcc --version | head -n1
 
+    # Broadened scope to cover device tree, recovery source, bionic, and all of system/core
+    # so no -Werror flag is missed across any source directory.
+    - name: Relax -Werror for old host tools (Omni)
+      if: ${{ steps.buildtree.outputs.value == 'omni' }}
+      run: |
+        grep -rl --include='*.mk' --include='Android.mk' -e '-Werror' \
+          external/ system/core/ bootable/recovery/ bionic/ build/ device/ \
+          2>/dev/null \
+          | xargs -r sed -i 's/-Werror/-Wno-error/g'
+        echo "Patched files:"
+        grep -rl --include='*.mk' --include='Android.mk' -e '-Wno-error' \
+          external/ system/core/ bootable/ build/ 2>/dev/null | head -n 30
+      working-directory: workspace
+
     - name: Building recovery (AOSP)
       if: ${{ steps.buildtree.outputs.value == 'aosp' }}
       run: |
@@ -268,8 +278,6 @@ jobs:
         lunch ${{ steps.buildtree.outputs.value }}_${{ inputs.DEVICE_NAME }}-eng && make ${{ inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: workspace
 
-    # Saved first so the file survives even if the release upload fails.
-    # Download it from the run's Summary page, under "Artifacts".
     - name: Upload build files as artifact
       if: always()
       uses: actions/upload-artifact@v4
