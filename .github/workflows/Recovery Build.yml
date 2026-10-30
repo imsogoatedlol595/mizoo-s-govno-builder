@@ -252,6 +252,34 @@ jobs:
           external/ system/core/ bootable/ build/ 2>/dev/null | head -n 30
       working-directory: workspace
 
+    # ar x preserves stored object paths inside libpcre.a (e.g. out/host/linux-x86/.../foo.o),
+    # which causes path-doubling inside WHOLE/libpcre_objs/ when libselinux is packed.
+    # Fix: after extraction, flatten all nested .o files back to the _objs/ root.
+    - name: Fix host libselinux/libpcre path-doubling (Omni)
+      if: ${{ steps.buildtree.outputs.value == 'omni' }}
+      run: |
+        python3 << 'EOF'
+        import re
+        f = 'build/core/host_static_library_internal.mk'
+        with open(f) as fh:
+            src = fh.read()
+        patched = re.sub(
+            r'(\$\(hide\) cd .+?HOST_AR\) x \$\(abspath \$\(2\)\))',
+            r'\1; find . -mindepth 2 -name "*.o" -exec mv -f {} . \;',
+            src
+        )
+        if patched != src:
+            with open(f, 'w') as fh:
+                fh.write(patched)
+            print('Patched host_static_library_internal.mk successfully')
+        else:
+            print('Pattern not found — dumping relevant lines for debug:')
+            for i, l in enumerate(src.splitlines(), 1):
+                if 'ar' in l.lower() or 'WHOLE' in l or 'abspath' in l:
+                    print(f'{i:4}: {l}')
+        EOF
+      working-directory: workspace
+
     - name: Building recovery (AOSP)
       if: ${{ steps.buildtree.outputs.value == 'aosp' }}
       run: |
