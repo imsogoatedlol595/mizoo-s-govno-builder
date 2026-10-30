@@ -230,6 +230,18 @@ jobs:
         cd /usr/bin
         sudo ln -sf python2 python
 
+    # Old (Omni-era) trees need GCC 9: newer GCC defaults to -fno-common,
+    # which breaks host tools such as checkpolicy ("multiple definition of te_assertions").
+    - name: Use GCC 9 for old trees (Omni)
+      if: ${{ steps.buildtree.outputs.value == 'omni' }}
+      run: |
+        sudo apt -y install gcc-9 g++-9 gcc-9-multilib g++-9-multilib
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 100
+        sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-9 100
+        sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-9 100
+        gcc --version | head -n1
+
     - name: Building recovery (AOSP)
       if: ${{ steps.buildtree.outputs.value == 'aosp' }}
       run: |
@@ -246,6 +258,8 @@ jobs:
       if: ${{ steps.buildtree.outputs.value == 'omni' }}
       run: |
         source build/envsetup.sh
+        # Use a relative output dir: absolute OUT_DIR paths break libselinux/libpcre packaging on 5.1
+        export OUT_DIR=out
         export ALLOW_MISSING_DEPENDENCIES=true
         if [ ${{ inputs.RECOVERY_INSTALLER }} = true ] && [ ${{ steps.recoveryinstaller.outcome == 'success' }} ]; then
           export USE_RECOVERY_INSTALLER=true
