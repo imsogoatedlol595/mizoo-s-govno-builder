@@ -1,4 +1,4 @@
-name: Recovery Build Bug Fix
+name: Recovery Build
 
 on:
   workflow_dispatch:
@@ -7,30 +7,31 @@ on:
         type: choice
         description: Manifest Branch
         options:
-        - 12.1
-        - 11
-        - 9.0
-        - 8.1
-        - 7.1
-        - 6.0
+        - '12.1'
+        - '11'
+        - '9.0'
+        - '8.1'
+        - '7.1'
+        - '6.0'
+        - '5.1'
         required: true
-        default: 12.1
+        default: '6.0'
       DEVICE_TREE_URL:
         description: Device Tree URL
         required: true
-        default: https://github.com/TeamWin/android_device_asus_I003D
+        default: https://github.com/TeamWin/android_device_samsung_gtaxllte
       DEVICE_TREE_BRANCH:
         description: Device Tree Branch
         required: true
-        default: android-12.1
+        default: android-6.0
       DEVICE_PATH:
         description: Path the device tree should be synced to, relative to source root
         required: true
-        default: device/asus/I003D
+        default: device/samsung/gtaxllte
       DEVICE_NAME:
         description: Device Name from tree (should match name on twrp_<DEVICE_NAME>.mk)
         required: true
-        default: I003D
+        default: gtaxllte
       REPOPICK_PATCHES:
         description: (Optional) Gerrit commit numbers separated by a space to be included in the build (leave blank if not using)
         type: string
@@ -54,7 +55,9 @@ jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
     runs-on: ubuntu-22.04
-    # You can use either of the ubuntu-20.04 or ubuntu-22.04 runner
+    # Needed so the release upload step is allowed to create a release
+    permissions:
+      contents: write
     steps:
     - name: Display Run Parameters
       run: |
@@ -67,11 +70,11 @@ jobs:
         echo "Build Target: ${{ inputs.BUILD_TARGET }}.img"
         echo "Include Recovery Installer: ${{ inputs.RECOVERY_INSTALLER }}"
         echo "::endgroup::"
- 
+
     # You might want to Checkout your repo first, but not mandatory
     - name: Check Out
       uses: actions/checkout@v4
-            
+
     # Cleanup The Actions Workspace Using Custom Composite Run Actions
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
@@ -111,7 +114,7 @@ jobs:
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
         sudo ln -sf ~/bin/repo /usr/bin/repo
-      
+
     - name: Initialize repo
       run: |
         mkdir workspace
@@ -119,7 +122,7 @@ jobs:
         git config --global user.name "${GITHUB_ACTOR}"
         git config --global user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_${{ steps.buildtree.outputs.value }}.git -b twrp-${{ inputs.MANIFEST_BRANCH }}
-          
+
     - name: Repo Sync
       run: |
         repo sync -j$(nproc --all) --force-sync
@@ -228,7 +231,7 @@ jobs:
         sudo ln -sf python2 python
 
     - name: Building recovery (AOSP)
-      if: ${{ steps.buildtree.outputs.value == 'aosp' }} 
+      if: ${{ steps.buildtree.outputs.value == 'aosp' }}
       run: |
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -240,7 +243,7 @@ jobs:
       working-directory: workspace
 
     - name: Building recovery (Omni)
-      if: ${{ steps.buildtree.outputs.value == 'omni' }} 
+      if: ${{ steps.buildtree.outputs.value == 'omni' }}
       run: |
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -251,11 +254,28 @@ jobs:
         lunch ${{ steps.buildtree.outputs.value }}_${{ inputs.DEVICE_NAME }}-eng && make ${{ inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: workspace
 
+    # Saved first so the file survives even if the release upload fails.
+    # Download it from the run's Summary page, under "Artifacts".
+    - name: Upload build files as artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.DEVICE_NAME }}-recovery
+        path: |
+          workspace/out/target/product/${{ inputs.DEVICE_NAME }}/${{ inputs.BUILD_TARGET }}.img
+          workspace/out/target/product/${{ inputs.DEVICE_NAME }}/recovery.tar
+          workspace/out/target/product/${{ inputs.DEVICE_NAME }}/*installer*zip
+          workspace/out/target/product/${{ inputs.DEVICE_NAME }}/ramdisk-recovery.*
+        if-no-files-found: warn
+        retention-days: 30
+
     - name: Upload to Release
       uses: softprops/action-gh-release@4634c16e79c963813287e889244c50009e7f0981
+      continue-on-error: true
       with:
         files: |
           workspace/out/target/product/${{ inputs.DEVICE_NAME }}/${{ inputs.BUILD_TARGET }}.img
+          workspace/out/target/product/${{ inputs.DEVICE_NAME }}/recovery.tar
           workspace/out/target/product/${{ inputs.DEVICE_NAME }}/*installer*zip
           workspace/out/target/product/${{ inputs.DEVICE_NAME }}/obj/PACKAGING/vendor_ramdisk_fragments_intermediates/recovery.*
           workspace/out/target/product/${{ inputs.DEVICE_NAME }}/ramdisk-recovery.*
