@@ -1,4 +1,4 @@
-name: Recovery Build
+name: Recovery Build (miatoll)
 
 on:
   workflow_dispatch:
@@ -15,23 +15,23 @@ on:
         - '6.0'
         - '5.1'
         required: true
-        default: '6.0'
+        default: '12.1'
       DEVICE_TREE_URL:
         description: Device Tree URL
         required: true
-        default: https://github.com/TeamWin/android_device_samsung_gtaxllte
+        default: https://github.com/haa-tgt/twrp_device_xiaomi_miatoll
       DEVICE_TREE_BRANCH:
         description: Device Tree Branch
         required: true
-        default: android-6.0
+        default: main
       DEVICE_PATH:
         description: Path the device tree should be synced to, relative to source root
         required: true
-        default: device/samsung/gtaxllte
+        default: device/xiaomi/miatoll
       DEVICE_NAME:
         description: Device Name from tree (should match name on twrp_<DEVICE_NAME>.mk)
         required: true
-        default: gtaxllte
+        default: miatoll
       REPOPICK_PATCHES:
         description: (Optional) Gerrit commit numbers separated by a space to be included in the build (leave blank if not using)
         type: string
@@ -40,8 +40,8 @@ on:
         type: choice
         description: Partition containing recovery ramdisk
         options:
-        - boot
         - recovery
+        - boot
         - vendor_boot
         required: true
         default: recovery
@@ -130,6 +130,15 @@ jobs:
         cp -f ${GITHUB_WORKSPACE}/templates/*.xml .repo/local_manifests/
       working-directory: workspace
 
+    - name: Verify device tree repo and branch
+      run: |
+        echo "Checking ${{ inputs.DEVICE_TREE_URL }} (branch ${{ inputs.DEVICE_TREE_BRANCH }})"
+        git ls-remote --heads ${{ inputs.DEVICE_TREE_URL }}
+        if ! git ls-remote --exit-code --heads ${{ inputs.DEVICE_TREE_URL }} ${{ inputs.DEVICE_TREE_BRANCH }} > /dev/null; then
+          echo "::error::Branch '${{ inputs.DEVICE_TREE_BRANCH }}' not found (or repo is private/missing): ${{ inputs.DEVICE_TREE_URL }}"
+          exit 1
+        fi
+
     - name: Clone device tree (TeamWin)
       if: |
         contains( inputs.DEVICE_TREE_URL,'/TeamWin/' )
@@ -157,6 +166,8 @@ jobs:
         sed -i "s%{DEVICE_PATH}%${{ inputs.DEVICE_PATH }}%g" .repo/local_manifests/roomservice.xml
         sed -i "s%{DEVICE_REMOTE_NAME}%${REMOTE_NAME}%g" .repo/local_manifests/roomservice.xml
         sed -i "s%{DEVICE_TREE_BRANCH}\"/-->%${{ inputs.DEVICE_TREE_BRANCH }}\"/>%g" .repo/local_manifests/roomservice.xml
+        echo "---- roomservice.xml ----"
+        cat .repo/local_manifests/roomservice.xml
         repo sync -j$(nproc --all)
       working-directory: workspace
 
